@@ -2,11 +2,10 @@ import os
 from jose import jwt
 from typing import Optional
 from datetime import datetime, timedelta, timezone
-from dotenv import load_dotenv
+from config import settings
 
-load_dotenv()
 
-SECRET_KEY = os.getenv("SECRET_KEY")
+SECRET_KEY = settings.SECRET_KEY
 if not SECRET_KEY:
     raise RuntimeError("SECRET_KEY is not set in environment! Add it to your .env file.")
 
