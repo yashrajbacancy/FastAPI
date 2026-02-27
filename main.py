@@ -1,24 +1,25 @@
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from contextlib import asynccontextmanager
-from schemas.User import UserCreate, UserResponse, UserUpdate
+from schemas.User import UserCreate, UserResponse, UserUpdate,RefreshRequest,LoginSchema
 from database import engine, get_db, Base
 from models.User import User
 from sqlalchemy import select
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm,HTTPBasicCredentials,HTTPAuthorizationCredentials
 from auth.hashing import hash_password, verify_password
 from fastapi_mail import FastMail, MessageSchema
 from email_config import conf
 from models.Note import Note
 from schemas.Note import NoteCreate, NoteResponse, NoteUpdate
 from auth.dependencies import get_current_user
-from auth.tokens import create_access_token
+from auth.tokens import create_access_token,create_refresh_token
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 import traceback
 import logging
-
+from jose import jwt
+from config import settings
 logger = logging.getLogger(__name__)
 
 
@@ -114,25 +115,96 @@ async def update_user(
     return user
 
 
+from fastapi import Body
+
 @app.post("/api/users/login")
 async def user_login(
-    form_data: OAuth2PasswordRequestForm = Depends(),
+    # loginUser: LoginSchema,
+    username: str,
+    password: str,
     session: AsyncSession = Depends(get_db),
 ):
+   
 
     result = await session.execute(
-        select(User).where(User.username == form_data.username)
+        select(User).where(User.username == username)
     )
     user = result.scalars().first()
-    if not user or not verify_password(form_data.password, user.password):
+
+    if not user or not verify_password(password, user.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid Credentials",
-            headers={"WWW-Authenticate": "Bearer"},
         )
 
     access_token = create_access_token(data={"sub": user.username})
-    return {"access_token": access_token, "token_type": "bearer"}
+    refresh_token = create_refresh_token(data={"sub": user.username})
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+    }
+
+
+@app.post("/refresh")
+async def refresh_token(
+    request: RefreshRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        payload = jwt.decode(
+            request.refresh_token,
+            key=settings.SECRET_KEY, 
+            algorithms=["HS256"],
+        )
+
+        if payload.get("type") != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type",
+            )
+
+        username = payload.get("sub")
+
+        if not username:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token payload",
+            )
+
+        result = await session.execute(
+            select(User).where(User.username == username)
+        )
+        user = result.scalars().first()
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+
+        new_access_token = create_access_token(
+            data={"sub": user.username}
+        )
+
+        return {
+            "access_token": new_access_token,
+            "token_type": "bearer",
+        }
+
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token expired",
+        )
+    
+    except jwt.JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        )
+    
 
 
 @app.post("/api/notes", response_model=NoteResponse)

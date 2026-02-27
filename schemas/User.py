@@ -28,3 +28,12 @@ class UserResponse(UserBase):
     id: int
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)  
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class LoginSchema(BaseModel):
+    username:str
+    password:str

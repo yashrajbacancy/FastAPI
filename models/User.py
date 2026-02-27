@@ -5,9 +5,6 @@ from database import Base
 # from models.Notes import Note
 
 
-
-
-
 class User(Base):
     __tablename__ = "users"
 
