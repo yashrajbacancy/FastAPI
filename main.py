@@ -1,18 +1,28 @@
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from contextlib import asynccontextmanager
-from schemas.User import UserCreate, UserResponse, UserUpdate,RefreshRequest,LoginSchema
+from schemas.User import (
+    UserCreate,
+    UserResponse,
+    UserUpdate,
+    RefreshRequest,
+    LoginSchema,
+)
 from database import engine, get_db, Base
 from models.User import User
 from sqlalchemy import select
-from fastapi.security import OAuth2PasswordRequestForm,HTTPBasicCredentials,HTTPAuthorizationCredentials
+from fastapi.security import (
+    OAuth2PasswordRequestForm,
+    HTTPBasicCredentials,
+    HTTPAuthorizationCredentials,
+)
 from auth.hashing import hash_password, verify_password
 from fastapi_mail import FastMail, MessageSchema
 from email_config import conf
 from models.Note import Note
 from schemas.Note import NoteCreate, NoteResponse, NoteUpdate
 from auth.dependencies import get_current_user
-from auth.tokens import create_access_token,create_refresh_token
+from auth.tokens import create_access_token, create_refresh_token
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -20,13 +30,12 @@ import traceback
 import logging
 from jose import jwt
 from config import settings
+
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
     yield
 
 
@@ -73,7 +82,12 @@ async def create_user(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Username already exists"
         )
     hashed_password = hash_password(user.password)
-    new_user = User(username=user.username, email=user.email, password=hashed_password)
+    new_user = User(
+        username=user.username,
+        email=user.email,
+        country=user.country,
+        password=hashed_password,
+    )
 
     session.add(new_user)
     await session.commit()
@@ -117,6 +131,7 @@ async def update_user(
 
 from fastapi import Body
 
+
 @app.post("/api/users/login")
 async def user_login(
     # loginUser: LoginSchema,
@@ -124,11 +139,8 @@ async def user_login(
     password: str,
     session: AsyncSession = Depends(get_db),
 ):
-   
 
-    result = await session.execute(
-        select(User).where(User.username == username)
-    )
+    result = await session.execute(select(User).where(User.username == username))
     user = result.scalars().first()
 
     if not user or not verify_password(password, user.password):
@@ -155,7 +167,7 @@ async def refresh_token(
     try:
         payload = jwt.decode(
             request.refresh_token,
-            key=settings.SECRET_KEY, 
+            key=settings.SECRET_KEY,
             algorithms=["HS256"],
         )
 
@@ -173,9 +185,7 @@ async def refresh_token(
                 detail="Invalid token payload",
             )
 
-        result = await session.execute(
-            select(User).where(User.username == username)
-        )
+        result = await session.execute(select(User).where(User.username == username))
         user = result.scalars().first()
 
         if not user:
@@ -184,9 +194,7 @@ async def refresh_token(
                 detail="User not found",
             )
 
-        new_access_token = create_access_token(
-            data={"sub": user.username}
-        )
+        new_access_token = create_access_token(data={"sub": user.username})
 
         return {
             "access_token": new_access_token,
@@ -198,13 +206,12 @@ async def refresh_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token expired",
         )
-    
+
     except jwt.JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid refresh token",
         )
-    
 
 
 @app.post("/api/notes", response_model=NoteResponse)
@@ -306,6 +313,12 @@ async def global_http_exception_handler(request: Request, exc: StarletteHTTPExce
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+
+    formatted_errors = []
+
+    for err in exc.errors():
+        formatted_errors.append({"field": err["loc"][-1], "message": err["msg"]})
+
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={
@@ -313,7 +326,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "error": {
                 "type": "ValidationError",
                 "message": "Invalid request data",
-                "details": exc.errors(),
+                "details": formatted_errors,
             },
         },
     )

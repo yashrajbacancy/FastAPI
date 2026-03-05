@@ -9,7 +9,7 @@ if not DATABASE_URL:
 
 class Base(DeclarativeBase):
     pass
-
+ 
 
 engine = create_async_engine(DATABASE_URL, echo=True)
 

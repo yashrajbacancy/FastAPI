@@ -6,11 +6,14 @@ from datetime import datetime
 class UserBase(BaseModel):
     username: str = Field()
     email: EmailStr = Field()
+    country:str=Field()
+   
 
 
-class UserUpdate(UserBase):
+class UserUpdate(BaseModel):
     username: Optional[str] = None
-    email: Optional[EmailStr] = None  
+    email: Optional[EmailStr] = None 
+    
 
 
 class UserCreate(UserBase):
